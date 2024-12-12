@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sensor Data Pong Game</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 20px auto;
+        }
+
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Arduino Pong Game</h1>
+    <!-- <p><strong>Sensor Values:</strong> <span id="sensorValues">No data yet</span></p> -->
+    <canvas id="pongCanvas" width="800" height="600"></canvas>
+</body>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script type="application/javascript">
+    const SERVERADDRESS = "http://127.0.0.1:3000/data"; 
+    let accelerationData = { x: 0, y: 0, z: 0 };
+
+    const canvas = document.getElementById("pongCanvas");
+    const ctx = canvas.getContext("2d");
+    const paddleWidth = 10, paddleHeight = 120;
+    let playerPaddleY = canvas.height / 2 - paddleHeight / 2;
+    let opponentPaddleY = canvas.height / 2 - paddleHeight / 2;
+    const ballSize = 10;
+    let ballX = canvas.width / 2, ballY = canvas.height / 2;
+    let ballSpeedX = 5, ballSpeedY = 3;
+    let playerScore = 0, opponentScore = 0;
+
+    function getRandomSpeedY() {
+        const minSpeed = 2;
+        const maxSpeed = 5;
+        const direction = Math.random() < 0.5 ? -1 : 1;
+        return direction * (Math.random() * (maxSpeed - minSpeed) + minSpeed);
+    }
+
+    function resetBall() {
+        ballX = canvas.width / 2;
+        ballY = canvas.height / 2;
+        ballSpeedX = Math.random() < 0.5 ? 5 : -5; 
+        ballSpeedY = getRandomSpeedY();
+    }
+
+    function getData() {
+        fetch(SERVERADDRESS, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+            .then(response => response.json())
+            .then(dataResponse => {
+                const sensorValues = dataResponse.sensorValues;
+                // document.getElementById('sensorValues').innerText = sensorValues.join(", ");
+                accelerationData.x = sensorValues[0] || 0;
+            })
+            .catch(error => console.error('Error fetching data:', error));
+    }
+
+    function mapIMUToPaddle() {
+        const normalized = Math.max(-1, Math.min(1, accelerationData.x));
+        playerPaddleY = ((normalized + 1) / 2) * (canvas.height - paddleHeight);
+    }
+
+	function updateOpponentPaddle() {
+		if (Math.random() > 0.1) {  // Opponent fails to get the ball: 10%
+			if (ballY > opponentPaddleY + paddleHeight / 2) {
+				opponentPaddleY += 3; 
+			} else if (ballY < opponentPaddleY + paddleHeight / 2) {
+				opponentPaddleY -= 3; 
+			}
+		}
+
+		if (opponentPaddleY < 0) {
+			opponentPaddleY = 0; 
+		}
+		if (opponentPaddleY + paddleHeight > canvas.height) {
+			opponentPaddleY = canvas.height - paddleHeight; 
+		}
+	}
+
+    function updateGame() {
+        ballX += ballSpeedX;
+        ballY += ballSpeedY;
+
+		// up and down wall bounce
+        if (ballY <= 0 || ballY + ballSize >= canvas.height) {
+            ballSpeedY *= -1;
+        }
+
+        // Player paddle bounce
+        if (ballX <= paddleWidth && ballY > playerPaddleY && ballY < playerPaddleY + paddleHeight) {
+            ballX = paddleWidth;
+            ballSpeedX *= -1;
+        }
+
+        // opponent paddle bounce
+        if (ballX + ballSize >= canvas.width - paddleWidth &&
+            ballY > opponentPaddleY && ballY < opponentPaddleY + paddleHeight) {
+            ballX = canvas.width - paddleWidth - ballSize;
+            ballSpeedX *= -1;
+        }
+
+        if (ballX <= 0) {
+            opponentScore++;
+            resetBall();
+        }
+
+        if (ballX + ballSize >= canvas.width) {
+            playerScore++;
+            resetBall();
+        }
+
+        mapIMUToPaddle();
+        updateOpponentPaddle();
+    }
+
+
+    function drawGame() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+
+        ctx.fillStyle = "red";
+        ctx.fillRect(ballX, ballY, ballSize, ballSize);
+
+        ctx.fillStyle = "blue";
+        ctx.fillRect(0, playerPaddleY, paddleWidth, paddleHeight);
+
+        ctx.fillStyle = "green";
+        ctx.fillRect(canvas.width - paddleWidth, opponentPaddleY, paddleWidth, paddleHeight);
+
+        ctx.fillStyle = "black";
+        ctx.font = "20px Arial";
+        ctx.fillText(`Player: ${playerScore}  Opponent: ${opponentScore}`, canvas.width / 2 - 70, 20);
+    }
+
+    function gameLoop() {
+        getData();
+        updateGame();
+        drawGame();
+        requestAnimationFrame(gameLoop);
+    }
+
+    resetBall();
+    gameLoop();
+</script>
+
+</html>
